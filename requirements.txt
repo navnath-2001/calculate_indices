@@ -3,3 +3,4 @@ rasterio
 numpy
 matplotlib
 gunicorn
+streamlit-extras
