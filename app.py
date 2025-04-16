@@ -1,4 +1,6 @@
 import streamlit as st
+# ⬇️ This must be the very first command
+st.set_page_config(layout="wide", page_title="Vegetation Index Calculator", page_icon="🌿")
 import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,7 +8,8 @@ import tempfile
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_extras.colored_header import colored_header
 
-st.set_page_config(layout="wide", page_title="Vegetation Index Calculator", page_icon="🌿")
+# # ⬅️ This must be the first Streamlit command
+# st.set_page_config(layout="wide", page_title="Vegetation Index Calculator", page_icon="🌿")
 
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Leaf_icon.svg/1024px-Leaf_icon.svg.png", width=100)
