@@ -1,13 +1,20 @@
 import streamlit as st
-import rasterio
-import numpy as np
-import matplotlib.pyplot as plt
-import tempfile
-from streamlit_extras.metric_cards import style_metric_cards
-from streamlit_extras.colored_header import colored_header
-
 st.set_page_config(layout="wide", page_title="Vegetation Index Calculator", page_icon="🌿")
 
+import rasterio
+import numpy as np
+import tempfile
+import folium
+from streamlit_folium import st_folium
+from folium.raster_layers import ImageOverlay
+from rasterio.plot import reshape_as_image
+from streamlit_extras.colored_header import colored_header
+import os
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+
+# Sidebar and title
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Leaf_icon.svg/1024px-Leaf_icon.svg.png", width=100)
     st.title("Index Options")
@@ -37,7 +44,6 @@ st.markdown("""
 
 st.markdown("<div class='main-title'>🌿 Vegetation Indices Calculator 🌿</div>", unsafe_allow_html=True)
 
-# Define required bands per index
 required_bands = {
     "NDVI": ["Red", "NIR"],
     "EVI": ["Red", "NIR", "Blue"],
@@ -55,12 +61,6 @@ uploaded_bands = {}
 for band in required_bands[selected_index]:
     uploaded_bands[band.lower()] = st.file_uploader(f"Upload {band} Band (.tif)", type=["tif", "tiff"], key=band.lower())
 
-if all(uploaded_bands[band.lower()] for band in required_bands[selected_index]):
-    st.success("✅ All required bands uploaded.")
-else:
-    st.info("ℹ️ Please upload all required bands to proceed.")
-
-# Calculation functions
 def calculate_ndvi(nir, red):
     return (nir - red) / (nir + red + 1e-10)
 
@@ -111,25 +111,42 @@ if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_b
         for name, file in uploaded_bands.items():
             with rasterio.open(file) as src:
                 bands_data[name] = src.read(1).astype(float)
+                meta = src.meta.copy()
+                bounds = src.bounds
+                transform = src.transform
 
         result = compute_index(selected_index, bands_data)
 
         if result is not None:
-            st.subheader(f"{selected_index} Result Map")
+            # Normalize and convert to RGB image using matplotlib colormap
+            norm_result = (result - np.nanmin(result)) / (np.nanmax(result) - np.nanmin(result))
+            colormap = cm.get_cmap('viridis')
+            rgba_img = (colormap(norm_result)[:, :, :3] * 255).astype(np.uint8)
 
-            fig, ax = plt.subplots()
-            im = ax.imshow(result, cmap="viridis")
-            ax.set_title(f"{selected_index} Map", fontsize=14)
-            ax.axis("off")
-            fig.colorbar(im, ax=ax, orientation="horizontal", shrink=0.7)
-            st.pyplot(fig)
+            temp_dir = tempfile.mkdtemp()
+            image_path = os.path.join(temp_dir, "index_output.png")
+            Image.fromarray(rgba_img).save(image_path)
 
-            with rasterio.open(list(uploaded_bands.values())[0]) as src:
-                profile = src.profile
-            profile.update(dtype='float32', count=1, compress='lzw')
+            center = [(bounds.top + bounds.bottom) / 2, (bounds.left + bounds.right) / 2]
+            m = folium.Map(location=center, zoom_start=12, control_scale=True)
 
+            ImageOverlay(
+                name=f"{selected_index} Overlay",
+                image=image_path,
+                bounds=[[bounds.bottom, bounds.left], [bounds.top, bounds.right]],
+                opacity=0.7,
+                interactive=True,
+                cross_origin=False
+            ).add_to(m)
+
+            folium.LayerControl().add_to(m)
+
+            st_folium(m, width=700, height=500)
+
+            # Download GeoTIFF
             with tempfile.NamedTemporaryFile(delete=False, suffix=".tif") as tmp_file:
-                with rasterio.open(tmp_file.name, 'w', **profile) as dst:
+                meta.update(dtype='float32', count=1, compress='lzw')
+                with rasterio.open(tmp_file.name, 'w', **meta) as dst:
                     dst.write(result.astype(np.float32), 1)
 
                 with open(tmp_file.name, 'rb') as f:

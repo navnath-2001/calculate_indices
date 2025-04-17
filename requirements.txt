@@ -4,3 +4,4 @@ numpy
 matplotlib
 gunicorn
 streamlit-extras
+streamlit_folium
