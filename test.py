@@ -1,36 +1,19 @@
 import streamlit as st
 st.set_page_config(layout="wide", page_title="Vegetation Index Calculator", page_icon="🌿")
-import json  # Add this at the top
 
 import rasterio
 import numpy as np
 import tempfile
-import folium
-from streamlit_folium import st_folium
-from folium.raster_layers import ImageOverlay
-from rasterio.plot import reshape_as_image
-from streamlit_extras.colored_header import colored_header
 import base64
 from PIL import Image
 import io
 import os
-import matplotlib.pyplot as plt  # ✅ for colormaps
+import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
+from streamlit_extras.colored_header import colored_header
+import json  # ✅ For JS-compatible bounds
 
-# Display map.html in the dashboard
-st.markdown("### 🗺️ Interactive Map Example (Leaflet JS)")
-
-map_file_path = "map.html"
-
-if os.path.exists(map_file_path):
-    with open(map_file_path, 'r', encoding='utf-8') as f:
-        html_string = f.read()
-        components.html(html_string, height=500, scrolling=False)
-else:
-    st.warning("Map HTML file not found. Please make sure 'map.html' exists in the project folder.")
-
-
-# Sidebar and title
+# Sidebar
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Leaf_icon.svg/1024px-Leaf_icon.svg.png", width=100)
     st.title("Index Options")
@@ -38,6 +21,7 @@ with st.sidebar:
     selected_index = st.selectbox("Select an Index", indices)
     st.success(f"You selected: {selected_index}")
 
+# Title
 st.markdown("""
     <style>
         .main-title {
@@ -60,6 +44,7 @@ st.markdown("""
 
 st.markdown("<div class='main-title'>🌿 Vegetation Indices Calculator 🌿</div>", unsafe_allow_html=True)
 
+# Required bands
 required_bands = {
     "NDVI": ["Red", "NIR"],
     "EVI": ["Red", "NIR", "Blue"],
@@ -77,7 +62,7 @@ uploaded_bands = {}
 for band in required_bands[selected_index]:
     uploaded_bands[band.lower()] = st.file_uploader(f"Upload {band} Band (.tif)", type=["tif", "tiff"], key=band.lower())
 
-# Index functions
+# Index calculation functions
 def calculate_ndvi(nir, red):
     return (nir - red) / (nir + red + 1e-10)
 
@@ -121,7 +106,8 @@ def compute_index(index, bands):
         return calculate_ndwi(bands["green"], bands["nir"])
     else:
         return None
-# Calculate index only when button is clicked
+
+# Calculate button
 if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_bands.values()):
     try:
         bands_data = {}
@@ -130,27 +116,27 @@ if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_b
                 bands_data[name] = src.read(1).astype(float)
                 meta = src.meta.copy()
                 bounds = src.bounds
-                transform = src.transform
 
         result = compute_index(selected_index, bands_data)
 
         if result is not None:
-            # Normalize result and convert to base64 PNG
             norm_result = (result - np.nanmin(result)) / (np.nanmax(result) - np.nanmin(result))
             colormap = plt.get_cmap('viridis')
             rgba_img = (colormap(norm_result)[:, :, :3] * 255).astype(np.uint8)
             image = Image.fromarray(rgba_img)
 
-            # Convert image to base64
+            # Convert to base64 PNG
             img_buffer = io.BytesIO()
             image.save(img_buffer, format='PNG')
             img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
             image_url = f"data:image/png;base64,{img_base64}"
 
-            # Prepare overlay bounds
             image_bounds = [[bounds.bottom, bounds.left], [bounds.top, bounds.right]]
 
-            # Inject overlay into map.html
+            # Inject into map.html
+            with open("map.html", "r", encoding="utf-8") as f:
+                map_html = f.read()
+
             overlay_script = f"""
             <script>
               window.overlayData = {{
@@ -160,14 +146,10 @@ if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_b
             </script>
             """
 
-            # Read and embed modified HTML
-            with open("map.html", "r", encoding="utf-8") as f:
-                map_html = f.read()
-
             full_html = overlay_script + map_html
             components.html(full_html, height=600, scrolling=False)
 
-            # Optional download button
+            # GeoTIFF download
             with tempfile.NamedTemporaryFile(delete=False, suffix=".tif") as tmp_file:
                 meta.update(dtype='float32', count=1, compress='lzw')
                 with rasterio.open(tmp_file.name, 'w', **meta) as dst:
@@ -184,6 +166,5 @@ if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_b
             st.error("❌ Selected index not implemented.")
     except Exception as e:
         st.error(f"❌ Something went wrong: {e}")
-
 
 st.markdown("<div class='footer'>© 2025 Vegetation Index App by You. All rights reserved.</div>", unsafe_allow_html=True)
