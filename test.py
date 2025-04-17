@@ -1,5 +1,6 @@
 import streamlit as st
 st.set_page_config(layout="wide", page_title="Vegetation Index Calculator", page_icon="🌿")
+import json  # Add this at the top
 
 import rasterio
 import numpy as np
@@ -9,10 +10,25 @@ from streamlit_folium import st_folium
 from folium.raster_layers import ImageOverlay
 from rasterio.plot import reshape_as_image
 from streamlit_extras.colored_header import colored_header
-import os
+import base64
 from PIL import Image
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+import io
+import os
+import matplotlib.pyplot as plt  # ✅ for colormaps
+import streamlit.components.v1 as components
+
+# Display map.html in the dashboard
+st.markdown("### 🗺️ Interactive Map Example (Leaflet JS)")
+
+map_file_path = "map.html"
+
+if os.path.exists(map_file_path):
+    with open(map_file_path, 'r', encoding='utf-8') as f:
+        html_string = f.read()
+        components.html(html_string, height=500, scrolling=False)
+else:
+    st.warning("Map HTML file not found. Please make sure 'map.html' exists in the project folder.")
+
 
 # Sidebar and title
 with st.sidebar:
@@ -61,6 +77,7 @@ uploaded_bands = {}
 for band in required_bands[selected_index]:
     uploaded_bands[band.lower()] = st.file_uploader(f"Upload {band} Band (.tif)", type=["tif", "tiff"], key=band.lower())
 
+# Index functions
 def calculate_ndvi(nir, red):
     return (nir - red) / (nir + red + 1e-10)
 
@@ -104,7 +121,7 @@ def compute_index(index, bands):
         return calculate_ndwi(bands["green"], bands["nir"])
     else:
         return None
-
+# Calculate index only when button is clicked
 if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_bands.values()):
     try:
         bands_data = {}
@@ -118,32 +135,39 @@ if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_b
         result = compute_index(selected_index, bands_data)
 
         if result is not None:
-            # Normalize and convert to RGB image using matplotlib colormap
+            # Normalize result and convert to base64 PNG
             norm_result = (result - np.nanmin(result)) / (np.nanmax(result) - np.nanmin(result))
-            colormap = cm.get_cmap('viridis')
+            colormap = plt.get_cmap('viridis')
             rgba_img = (colormap(norm_result)[:, :, :3] * 255).astype(np.uint8)
+            image = Image.fromarray(rgba_img)
 
-            temp_dir = tempfile.mkdtemp()
-            image_path = os.path.join(temp_dir, "index_output.png")
-            Image.fromarray(rgba_img).save(image_path)
+            # Convert image to base64
+            img_buffer = io.BytesIO()
+            image.save(img_buffer, format='PNG')
+            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            image_url = f"data:image/png;base64,{img_base64}"
 
-            center = [(bounds.top + bounds.bottom) / 2, (bounds.left + bounds.right) / 2]
-            m = folium.Map(location=center, zoom_start=12, control_scale=True)
+            # Prepare overlay bounds
+            image_bounds = [[bounds.bottom, bounds.left], [bounds.top, bounds.right]]
 
-            ImageOverlay(
-                name=f"{selected_index} Overlay",
-                image=image_path,
-                bounds=[[bounds.bottom, bounds.left], [bounds.top, bounds.right]],
-                opacity=0.7,
-                interactive=True,
-                cross_origin=False
-            ).add_to(m)
+            # Inject overlay into map.html
+            overlay_script = f"""
+            <script>
+              window.overlayData = {{
+                image: "{image_url}",
+                bounds: {json.dumps(image_bounds)}
+              }};
+            </script>
+            """
 
-            folium.LayerControl().add_to(m)
+            # Read and embed modified HTML
+            with open("map.html", "r", encoding="utf-8") as f:
+                map_html = f.read()
 
-            st_folium(m, width=700, height=500)
+            full_html = overlay_script + map_html
+            components.html(full_html, height=600, scrolling=False)
 
-            # Download GeoTIFF
+            # Optional download button
             with tempfile.NamedTemporaryFile(delete=False, suffix=".tif") as tmp_file:
                 meta.update(dtype='float32', count=1, compress='lzw')
                 with rasterio.open(tmp_file.name, 'w', **meta) as dst:
@@ -158,8 +182,8 @@ if st.button("🚀 Calculate Index", key="calc_index_button") and all(uploaded_b
                     )
         else:
             st.error("❌ Selected index not implemented.")
-
     except Exception as e:
         st.error(f"❌ Something went wrong: {e}")
+
 
 st.markdown("<div class='footer'>© 2025 Vegetation Index App by You. All rights reserved.</div>", unsafe_allow_html=True)

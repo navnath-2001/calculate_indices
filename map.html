@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Leaflet Map Dashboard</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body { margin: 0; padding: 0; display: flex; height: 100vh; }
+    #sidebar {
+      width: 250px;
+      background-color: #f0f0f0;
+      padding: 15px;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    #map {
+      flex-grow: 1;
+    }
+    .coords {
+      margin-top: 20px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="sidebar">
+    <h2>Dashboard</h2>
+    <p>Click on the map to see coordinates.</p>
+    <div class="coords" id="coords">Lat: -, Lng: -</div>
+  </div>
+
+  <div id="map"></div>
+
+ 
+    <script>
+        const map = L.map('map').setView([20.5937, 78.9629], 5); // India center
+      
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+      
+        map.on('click', function(e) {
+          const lat = e.latlng.lat.toFixed(4);
+          const lng = e.latlng.lng.toFixed(4);
+          document.getElementById('coords').innerText = `Lat: ${lat}, Lng: ${lng}`;
+        });
+      
+        L.control.scale().addTo(map);
+      
+        // ✅ If overlay data is passed in (from Streamlit), render it
+        if (window.overlayData) {
+          const imageBounds = window.overlayData.bounds;
+          const imageUrl = window.overlayData.image;
+          
+          L.imageOverlay(imageUrl, imageBounds, {
+            opacity: 0.7,
+            interactive: true
+          }).addTo(map);
+        }
+      </script>
+
+
+</body>
+</html>
